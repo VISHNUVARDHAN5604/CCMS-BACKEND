@@ -3,8 +3,11 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const multer = require("multer");
+const axios = require("axios");
+//require("dotenv").config();
 
 const app = express();
+const ML_API_URL = "http://localhost:5001"; // ML API server URL
 app.use(cors());
 const methodOverride = require("method-override");
 app.use(methodOverride("_method"));
@@ -25,17 +28,15 @@ const normalizePriority = (value) => {
   return 1;
 };
 
-mongoose.connect("mongodb://127.0.0.1:27017/complaintDB")
+mongoose.connect("mongodb://127.0.0.1:27017/complaintDB",{
+
+    autoIndex: true
+})
+  
   .then(async () => {
     console.log("DB Connected");
-
-    /*const complaint_1 = new Complaint({
-      title: "water problem",
-      description: "student"
-    });
-
-    await complaint_1.save();
-    console.log("Data inserted");*/
+     await User.init();
+    console.log("Indexes ensured");
   })
   .catch(err => console.log(err));
   // storage config
@@ -85,10 +86,10 @@ app.use("/uploads", express.static("uploads"));
     res.status(500).send(err);
   }
 });*/
-//student add complaints
+//student add complaints with ML-based priority prediction
 app.post("/complaints", upload.single("image"), async (req, res) => {
   try {
-    const { userId, title, description, priority } = req.body;
+    const { userId, title, description } = req.body;
 
     //1. Check user exists
     const user = await User.findById(userId);
@@ -101,7 +102,21 @@ app.post("/complaints", upload.single("image"), async (req, res) => {
       return res.status(403).send("Only students can add complaints");
     }
 
-    //3. Create complaint using DB data (not frontend)
+    //3. Predict priority using ML API
+    let priority = 1; // Default to Low
+    try {
+      const mlResponse = await axios.post(`${ML_API_URL}/predict`, {
+        title: title,
+        description: description
+      });
+      priority = mlResponse.data.priority;
+      console.log(`🤖 ML API predicted priority: ${mlResponse.data.priority_label} (${priority}) for complaint: "${title}"`);
+    } catch (mlError) {
+      console.warn("⚠️  ML API error, using default priority:", mlError.message);
+      priority = 1; // Fallback to Low priority
+    }
+
+    //4. Create complaint with ML-predicted priority
     const complaint = new Complaint({
       title,
       description,
@@ -113,7 +128,7 @@ app.post("/complaints", upload.single("image"), async (req, res) => {
 
     await complaint.save();
 
-    res.send("Complaint added successfully");
+    res.json(complaint);
   } catch (err) {
     console.log(err);
     res.status(500).send("Server error");
@@ -429,22 +444,100 @@ app.get("/complaintsView/Resolved/:userId", async (req, res) => {
 
 
 //User REGISTER //worked
-app.post("/register", async (req, res) => {
+/*app.post("/register", async (req, res) => {
   try {
-    const existingUser = await User.findOne({ email: req.body.email });
+    const { email, name, password,role} = req.body;
+     role = role?.trim().toLowerCase();
+    
+    // Validate required fields
+    if (!email || !name || !password) {
+      return res.status(400).send("Name, email, and password are required.");
+    }
 
+    // Check if email already exists
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).send("User already exists. Please login.");
-    }else{
+    }
+    // 🔹 ADMIN LOGIC HERE 👇
+    if (role === "admin") {
 
+      // Check if admin already exists
+      const adminExists = await User.findOne({ role: "admin" });
+      if (adminExists) {
+        return res.status(400).send("Admin already exists");
+      }
+
+      // Check admin password
+      if (password !== "744") {
+        return res.status(400).send("Invalid admin password");
+      }
+    }
+
+    // Create and save user
     const user = new User(req.body);
     await user.save();
 
-    res.send("User registered successfully");}
+    res.send("User registered successfully");
+    
   } catch (err) {
-    console.log(err);
     res.status(500).send("Error registering user");
   }
+});*/
+//registration
+app.post("/register", async (req, res) => {
+  try {
+    let { email, name, password, role } = req.body; // ✅ use LET
+
+    // 🔹 Normalize role
+    role = role?.trim().toLowerCase();
+
+    // 🔹 Validate
+    if (!email || !name || !password || !role) {
+      return res.status(400).send("All fields are required.");
+    }
+
+    // 🔹 Check existing user
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).send("User already exists.");
+    }
+
+    // 🔥 ADMIN LOGIC
+    if (role === "admin") {
+      const adminExists = await User.findOne({ role: "admin" });
+
+      if (adminExists) {
+        return res.status(400).send("Admin already exists");
+      }
+
+      if (password !== "744") {
+        return res.status(400).send("Invalid admin password");
+      }
+    }
+
+    // ✅ SAVE CLEAN DATA (IMPORTANT FIX)
+    const user = new User({
+      email,
+      name,
+      password,
+      role
+    });
+
+    await user.save();
+
+    res.send("User registered successfully");
+
+  } catch (err) {
+  console.log(err);
+
+  // Duplicate key error (admin or email)
+  if (err.code === 11000) {
+    return res.status(400).send("User or Admin already exists");
+  }
+
+  res.status(500).send("Error registering user");
+}
 });
 // LOGIN
 //checks email,password for respective user to login otherwise invalid credentials //worked
