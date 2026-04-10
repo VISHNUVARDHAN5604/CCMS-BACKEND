@@ -134,6 +134,5 @@ def batch_predict():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Run on port 5001 (Node.js runs on 5000)
-    print("Starting ML API server on http://localhost:5001")
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
