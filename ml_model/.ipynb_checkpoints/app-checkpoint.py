@@ -8,9 +8,6 @@ import pickle
 import os
 import sys
 
-# Fix Windows console encoding
-sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-
 app = Flask(__name__)
 
 # Load the trained model
@@ -135,5 +132,5 @@ def batch_predict():
 
 if __name__ == '__main__':
     # Run on port 5001 (Node.js runs on 5000)
-    print("Starting ML API server on http://localhost:5001")
+    print("🚀 Starting ML API server on http://localhost:5001")
     app.run(debug=True, port=5001)

@@ -8,6 +8,12 @@ const mongoose = require("mongoose");
 const complaintSchema = new mongoose.Schema({
   title: String,
   description: String,
+  category: String,
+  severity: {
+    type: String,
+    enum: ["low", "medium", "high", "critical"],
+    default: "low",
+  },
   priority: {
     type: Number,
     default: 1,
@@ -21,12 +27,16 @@ const complaintSchema = new mongoose.Schema({
       return 1;
     },
   }, // 🔥 3=High,2=Medium,1=Low
-  student:String,
+  student: String,
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },   // 🔥 instead of student name
   worker: { type: mongoose.Schema.Types.ObjectId, ref: "User" },	//instead of worker name
-  department:String,
+  assignedByAdminId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  assignedAt: Date,
+  department: String,
   image: String,
+  evidenceImages: [String],
   afterImage: String,
+  adminMessage: { type: String, default: "" },
   status: {
     type: String,
     default: "Pending"

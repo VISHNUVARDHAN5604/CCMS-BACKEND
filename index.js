@@ -87,9 +87,9 @@ app.use("/uploads", express.static("uploads"));
   }
 });*/
 //student add complaints with ML-based priority prediction
-app.post("/complaints", upload.single("image"), async (req, res) => {
+app.post("/complaints", upload.array("evidenceImages", 6), async (req, res) => {
   try {
-    const { userId, title, description } = req.body;
+    const { userId, title, description, category} = req.body;
 
     //1. Check user exists
     const user = await User.findById(userId);
@@ -116,19 +116,24 @@ app.post("/complaints", upload.single("image"), async (req, res) => {
       priority = 1; // Fallback to Low priority
     }
 
+    const evidenceImages = Array.isArray(req.files)
+      ? req.files.map((file) => file.filename)
+      : [];
+
     //4. Create complaint with ML-predicted priority
     const complaint = new Complaint({
       title,
       description,
+      category: category || "other",
       priority,
-      student: user.name,   // ✅ from DB (safe)
-      userId: user._id,     // ✅ correct linking
-      image: req.file ? req.file.filename : ""
+      student: user.name,
+      userId: user._id,
+      image: evidenceImages[0] || "",
     });
 
     await complaint.save();
 
-    res.json(complaint);
+    res.json({ ok: true, complaint });
   } catch (err) {
     console.log(err);
     res.status(500).send("Server error");
@@ -204,6 +209,8 @@ app.put("/admin/assign/:complaintId", async (req, res) => {
     complaint.worker = workerId;
     complaint.department = department;
     complaint.status = "Pending";
+    complaint.assignedByAdminId = userId;
+    complaint.assignedAt = new Date();
     complaint.priority = normalizePriority(complaint.priority);
 
     await complaint.save();
@@ -231,7 +238,9 @@ app.get("/admin/complaints/pending/:userId", async (req, res) => {
     }
 
     const data = await Complaint.find({ status: "Pending" })
-      .populate("worker", "name") // 🔥 get worker name
+      .populate("worker", "name email phone") 
+      .populate("userId", "name email phone")
+      .populate("assignedByAdminId", "name email phone")
       .sort({ priority: -1 });
 
     res.json(data);
@@ -250,12 +259,15 @@ app.get("/admin/complaints/resolved/:userId", async (req, res) => {
 
     if (!user || user.role !== "admin") {
       return res.status(403).send("Access denied");}
-    const data = await Complaint.find({ status: "Resolved" }).populate("worker","name")
-    				.sort({ updatedAt: -1 });
+    const data = await Complaint.find({ status: "Resolved" })
+        .populate("worker", "name email phone")
+        .populate("userId", "name email phone")
+        .populate("assignedByAdminId", "name email phone")
+        .sort({ updatedAt: -1 });
     res.json(data);
   } catch (err) {
     res.status(500).send(err);
-  }
+  } 
 });
 
 
@@ -326,7 +338,11 @@ app.get("/worker/complaints/pending/:workerId", async (req, res) => {
     const data = await Complaint.find({
       worker: req.params.workerId,
       status: "Pending"
-    });
+    })
+      .populate("worker", "name email phone")
+      .populate("userId", "name email phone")
+      .populate("assignedByAdminId", "name email phone")
+      .sort({ priority: -1 });
     res.json(data);
   } catch (err) {
     res.status(500).send(err);
@@ -339,7 +355,11 @@ app.get("/worker/complaints/resolved/:workerId", async (req, res) => {
     const data = await Complaint.find({
       worker: req.params.workerId,
       status: "Resolved"
-    }).sort({ updatedAt: -1 });
+    })
+      .populate("worker", "name email phone")
+      .populate("userId", "name email phone")
+      .populate("assignedByAdminId", "name email phone")
+      .sort({ updatedAt: -1 });
     res.json(data);
   } catch (err) {
     res.status(500).send(err);
@@ -412,7 +432,7 @@ app.get("/complaintsView/:userId", async (req, res) => {
       return res.status(403).send("Access denied");
     }
   const data = await Complaint.find({ userId: req.params.userId,status:"Pending"}).populate("worker", "name");
-  res.json(data);
+  res.json({ ok: true, complaints: data });
   }
   catch (err) {
     res.status(500).send(err);
@@ -431,7 +451,7 @@ app.get("/complaintsView/Resolved/:userId", async (req, res) => {
       return res.status(403).send("Access denied");
     }
   const data = await Complaint.find({ userId: req.params.userId,status:"Resolved"}).populate("worker", "name");
-  res.json(data);
+  res.json({ ok: true, complaints: data });
   }
   catch (err) {
     res.status(500).send(err);
@@ -439,6 +459,22 @@ app.get("/complaintsView/Resolved/:userId", async (req, res) => {
 
 
 
+});
+
+// Student: get complaint detail
+app.get("/complaints/:id", async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id)
+        .populate("worker", "name email phone")
+        .populate("userId", "name email phone")
+        .populate("assignedByAdminId", "name email phone");
+    if (!complaint) {
+      return res.status(404).send("Complaint not found");
+    }
+    res.json({ ok: true, complaint });
+  } catch (err) {
+    res.status(500).send(err);
+  }
 });
 
 
@@ -526,7 +562,16 @@ app.post("/register", async (req, res) => {
 
     await user.save();
 
-    res.send("User registered successfully");
+    res.json({
+      ok: true,
+      token: user._id,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      }
+    });
 
   } catch (err) {
   console.log(err);
@@ -557,8 +602,14 @@ app.post("/login", async (req, res) => {
 
     //Send user data also
     res.json({
-      message: "Successfully Logged In",
-      user: user
+      ok: true,
+      token: user._id,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      }
     });
 
   } catch (err) {
@@ -568,6 +619,59 @@ app.post("/login", async (req, res) => {
 
 
 
+
+// GET current user by ID (for frontend session verification against MongoDB)
+app.get("/user/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "User not found" });
+    }
+    res.json({
+      ok: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ADMIN: Save/Update message to worker on a complaint
+app.put("/admin/complaints/:id/message", async (req, res) => {
+  try {
+    const { userId, adminMessage } = req.body;
+
+    // Check admin
+    const admin = await User.findById(userId);
+    if (!admin || admin.role !== "admin") {
+      return res.status(403).json({ ok: false, error: "Access denied. Admins only." });
+    }
+
+    const complaint = await Complaint.findById(req.params.id);
+    if (!complaint) {
+      return res.status(404).json({ ok: false, error: "Complaint not found" });
+    }
+
+    complaint.adminMessage = adminMessage;
+    await complaint.save();
+
+    // Return the updated complaint with populated fields
+    const updated = await Complaint.findById(req.params.id)
+      .populate("worker", "name email phone")
+      .populate("userId", "name email phone")
+      .populate("assignedByAdminId", "name email phone");
+
+    res.json({ ok: true, complaint: updated });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
 
 app.listen(5000, () => {
   console.log("Server running on port 5000");

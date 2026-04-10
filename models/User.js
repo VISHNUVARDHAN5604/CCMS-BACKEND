@@ -10,8 +10,5 @@ const userSchema = new mongoose.Schema({
   password: String,
   role: String
 });
-userSchema.index(
-  { role: 1 },
-  { unique: true, partialFilterExpression: { role: "admin" } }
-);
+
 module.exports = mongoose.model("User", userSchema);
