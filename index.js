@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const multer = require("multer");
 const axios = require("axios");
-//require("dotenv").config();
+require("dotenv").config();
 
 const app = express();
 const ML_API_URL = "http://localhost:5001"; // ML API server URL
@@ -28,8 +28,7 @@ const normalizePriority = (value) => {
   return 1;
 };
 
-mongoose.connect("mongodb://127.0.0.1:27017/complaintDB",{
-
+mongoose.connect(process.env.MONGO_URI, {
     autoIndex: true
 })
   
